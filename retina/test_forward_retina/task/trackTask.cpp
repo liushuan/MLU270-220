@@ -13,9 +13,10 @@ static bool rect_in_padding(cv::Rect rect, int padding_x1, int padding_y1, int p
 }
 
 
-TrackTask::TrackTask(RetinaFace * detect, HEADPose * pose) {
+TrackTask::TrackTask(RetinaFace * detect, HEADPose * pose, Det3Net *det3) {
 	faceDetect = detect;
 	headPose = pose;
+	det3net = det3;
 	if (detect == nullptr) {
 		std::cout << "detect model is nullptr. init failed." << std::endl;
 		return;
@@ -104,6 +105,10 @@ static cv::Mat square_rect_Mat(cv::Mat img, cv::Rect rect) {
 
 void TrackTask::ai_track_thread() {
 	std::cout << "start track thread" << std::endl;
+	
+	cv::VideoWriter write;
+	write.open("output.avi", cv::VideoWriter::fourcc('M', 'J', 'P', 'G'), 20 ,cv::Size(screen_width, screen_height));
+	
 	while (!stop_ai_magic || obj_queue.getsize() > 0 || !ai_magic_thread_finished) {
 		std::vector<OBJTRACK> datas = obj_queue.getfromqueue(1);
 		if (datas.size() > 0) {
@@ -113,6 +118,7 @@ void TrackTask::ai_track_thread() {
 				int padding_y1 = datas[0].img.rows * padding_float_h * padding_upper;
 				int padding_x2 = datas[0].img.cols *(1 - padding_float_w);
 				int padding_y2 = datas[0].img.rows*(1 - padding_float_h);
+				
 				points.push_back(cv::Point(padding_x1, padding_y1));
 				points.push_back(cv::Point(padding_x2, padding_y1));
 				points.push_back(cv::Point(padding_x2, padding_y2));
@@ -121,6 +127,7 @@ void TrackTask::ai_track_thread() {
 				directs.push_back(DIRECT_IN); 
 				directs.push_back(DIRECT_IN);
 				directs.push_back(DIRECT_IN);
+				std::cout<<"init points auto."<<" x1:"<<padding_x1<<" y1:"<<padding_y1<<" x2:"<<padding_x2<<" y2:"<<padding_y2<<std::endl;
 			}
 			DETECTIONS detections;
 			for (size_t j = 0; j < datas[0].detects.size(); j++)
@@ -175,8 +182,9 @@ void TrackTask::ai_track_thread() {
 					cv::Rect rect = cv::Rect(tmp(0), tmp(1), tmp(2), tmp(3));
 					cv::Mat face = square_rect_Mat(datas[0].img, rect);
 					Pose pose = headPose->Detect(face);
+					bool det3result = det3net->Detect(face);
 					//std::cout<<"pitch: "<<std::abs(pose.pitch)<<":"<<std::abs(pose.yaw)<<":"<<std::abs(pose.roll)<<std::endl;
-					if (std::abs(pose.pitch) < max_angle_pitch && std::abs(pose.yaw) < max_angle_yaw && std::abs(pose.roll) < max_angle_roll){
+					if (det3result && std::abs(pose.pitch) < max_angle_pitch && std::abs(pose.yaw) < max_angle_yaw && std::abs(pose.roll) < max_angle_roll && track.confidence > 0.1f){
 						if (track.bestFace.empty()){
 							track.bestFace = get_zoom_rect(datas[0].img, rect, best_face_zoom);
 							track.pose_roll = pose.roll;
@@ -251,6 +259,7 @@ void TrackTask::ai_track_thread() {
 						std::string label = cv::format("%d", result[kk].first);
 						cv::putText(datas[0].img, label, cv::Point(rect.x, rect.y), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(255, 255, 0), 2);
 					}
+					
 				}
 			}
 			else
@@ -259,15 +268,17 @@ void TrackTask::ai_track_thread() {
 			}
 			if (show) {
 				cv::resize(datas[0].img, datas[0].img, cv::Size(screen_width, screen_height));
-				cv::putText(datas[0].img, "in:" + std::to_string(mytracker->track_count_in[0]), cv::Point(100, 100), 1, 1.5, cv::Scalar(0, 0, 255));
-				cv::putText(datas[0].img, "out:" + std::to_string(mytracker->track_count_out[0]), cv::Point(100, 200), 1, 1.5, cv::Scalar(0, 0, 255));
-				cv::putText(datas[0].img, "in-out:" + std::to_string(std::abs(mytracker->track_count_in[0] - mytracker->track_count_out[0])), cv::Point(100, 300), 1, 1.5, cv::Scalar(0, 0, 255));
-				cv::imshow("video", datas[0].img);
-				cv::waitKey(1);
+				//cv::putText(datas[0].img, "in:" + std::to_string(mytracker->track_count_in[0]), cv::Point(100, 100), 1, 1.5, cv::Scalar(0, 0, 255));
+				//cv::putText(datas[0].img, "out:" + std::to_string(mytracker->track_count_out[0]), cv::Point(100, 200), 1, 1.5, cv::Scalar(0, 0, 255));
+				//cv::putText(datas[0].img, "in-out:" + std::to_string(std::abs(mytracker->track_count_in[0] - mytracker->track_count_out[0])), cv::Point(100, 300), 1, 1.5, cv::Scalar(0, 0, 255));
+				//cv::imshow("video", datas[0].img);
+				//cv::waitKey(1);
+				write << datas[0].img;
 			}
 			datas.clear();
 		}
 	}
+	write.release();
 	std::cout << "end track thread" << std::endl;
 }
 

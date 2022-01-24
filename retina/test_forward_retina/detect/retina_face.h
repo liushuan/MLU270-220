@@ -50,7 +50,8 @@ private:
 	const float threhold = 0.7f;
 	const int min_width = 32;
 	const float iou_threhold = 0.4f;
-	
+	const float fradio_threadhold = 0.4f;
+	const float default_score = 0.1f;
 	const int input_size_w = 640;
 	const int input_size_h = 640;
 	std::vector<RetinaAnchor> myAnchors;
@@ -65,6 +66,7 @@ public:
 	
 	void init();
 	
+	void sure_face(std::vector<FaceA>&faces);
 	
 	void Detect(cv::Mat& img, std::vector<FaceA>&faces);
 	

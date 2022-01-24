@@ -29,7 +29,7 @@ RetinaFace::RetinaFace(std::string models_path) {
 	init();
 
 	generate_anchor();
-	std::cout<< "load model finished."<<std::endl;
+	std::cout<< "load retina model finished."<<std::endl;
 }
 
 void RetinaFace::init(){
@@ -211,6 +211,19 @@ static void nms_cpu(std::vector<FaceA>& boxes, float threshold, std::vector<Face
 	}
 }
 
+static float get_face_radio(float * landmarks, cv::Rect frect) {
+	float width = frect.width;
+	float d_eye2 = (landmarks[0] - landmarks[2])*(landmarks[0] - landmarks[2]) + (landmarks[1] - landmarks[3])*(landmarks[1] - landmarks[3]);
+	float e_c_x = (landmarks[0] + landmarks[2]) / 2;
+	float e_c_y = (landmarks[1] + landmarks[3]) / 2;
+	float d_nose_eye = sqrt((landmarks[4] - e_c_x)*(landmarks[4] - e_c_x) + (landmarks[5] - e_c_y)*(landmarks[5] - e_c_y));
+	if (d_eye2 == 0) {
+		return 0.0f;
+	}
+	return d_eye2 / (d_nose_eye*width);
+}
+
+
 static cv::Mat resize_with_crop(cv::Mat origin_image, int input_image_size_w, int input_image_size_h, int &pad_top, int &pad_left, int &resize_w, int &resize_h) {
 
 	float radio = (float)(input_image_size_w) / input_image_size_h;
@@ -235,6 +248,18 @@ static cv::Mat resize_with_crop(cv::Mat origin_image, int input_image_size_w, in
 	return resized_image;
 }
 
+
+void RetinaFace::sure_face(std::vector<FaceA>&faces){
+	for (int i = 0; i < faces.size();i++)
+	{
+		float fradio = get_face_radio(faces[i].landmarks, faces[i].rect);
+		if (fradio > fradio_threadhold && faces[i].rect.width > min_width) {
+			return;
+		}else{
+			faces[i].score = default_score;
+		}
+	}
+}
 
 void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 	cv::Mat dst;
@@ -325,7 +350,7 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 			}
 		}
 		nms_cpu(pre_plates, iou_threhold, face);
-		
+		sure_face(face);
     } else {
       std::cout<< " SyncQueue Error "<<std::endl;
     }

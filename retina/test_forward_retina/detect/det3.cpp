@@ -1,9 +1,9 @@
-#include "headpose.h"
+#include "det3.h"
 
 //DEFINE_int32(mludevice, 0, "set using mlu device number, default: 0");
 
 //extern int FLAGS_mludevice;
-HEADPose::HEADPose(std::string models_path) {
+Det3Net::Det3Net(std::string models_path) {
 	
 	cnrtInit(0);
 	unsigned devNum;
@@ -26,10 +26,10 @@ HEADPose::HEADPose(std::string models_path) {
 	cnrtLoadModel(&model, models_path.c_str());
 	init();
 
-	std::cout<< "load headpose model finished."<<std::endl;
+	std::cout<< "load det3 model finished."<<std::endl;
 }
 
-void HEADPose::init(){
+void Det3Net::init(){
 	cnrtCreateFunction(&function);
     cnrtExtractFunction(&function, model, "subnet0");
     cnrtCreateRuntimeContext(&rt_ctx_, function, NULL);
@@ -86,9 +86,8 @@ void HEADPose::init(){
 }
 
 
-Pose HEADPose::Detect(cv::Mat& img) {
+bool Det3Net::Detect(cv::Mat& img) {
 	//1. process
-	Pose pose;
 	float * data = reinterpret_cast<float*>(inputCpuPtrS[0]);
 	int i = 0;
 	for (int row = 0; row < input_size_h; ++row) {
@@ -122,24 +121,19 @@ Pose HEADPose::Detect(cv::Mat& img) {
 					 outputSizeS[i],
 					 CNRT_MEM_TRANS_DIR_DEV2HOST);
 		}
-		//float * result_landmarks = (reinterpret_cast<float*>(outputCpuPtrS[0]));
-		float * result_angle = (reinterpret_cast<float*>(outputCpuPtrS[1]));
-		/*for(int j = 0; j < 5; j++){
-			cv::circle(img, cv::Point((result_landmarks[2*j]+0.5)*img.cols  , (result_landmarks[2*j+1]+0.5)*img.rows), 2, cv::Scalar(255,0,0), -1);
-			std::cout<<"landmark:"<<result_landmarks[2*j]<<" "<<result_landmarks[2*j+1]<<std::endl;
+		float * result_prob = (reinterpret_cast<float*>(outputCpuPtrS[0]));
+		if (result_prob[1] > threhold){
+			return true;
 		}
-		std::cout<<"angle:"<<result_angle[0]<<" "<<result_angle[1]<<" "<<result_angle[2]<<std::endl;*/
-		pose.yaw = result_angle[0]*90;
-		pose.pitch = result_angle[1]*90;
-		pose.roll = result_angle[2]*90;
-		return pose;
+		return false;
     } else {
       std::cout << " SyncQueue Error ";
     }
+	return false;
 }
 
 
-HEADPose::~HEADPose(){
+Det3Net::~Det3Net(){
 
     for (int i = 0; i < inputNum; i++){
       cnrtFree(inputMluPtrS[i]);

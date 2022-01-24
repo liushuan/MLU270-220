@@ -3,6 +3,7 @@
 
 #include "./detect/retina_face.h"
 #include "./detect/headpose.h"
+#include "./detect/det3.h"
 
 #include "task/trackTask.h"
 #include "decoder/decode_task.h"
@@ -77,25 +78,26 @@ int main(){
 	int fps = 30;
 	std::string face_engin_name = "./weights/retinaface.cambricon.cambricon";
 	std::string head_engin_name = "./weights/headpose.cambricon.cambricon";
+	std::string det3_engin_name = "./weights/det3.cambricon.cambricon";
 	RetinaFace faceDetect(face_engin_name);
 	HEADPose headpose(head_engin_name);
-	
-	test_head();
+	Det3Net det3net(det3_engin_name);
+	//test_head();
 	
 	
 	std::shared_ptr<TrackTask> trackTaskN;
 	std::shared_ptr<DecodeTask> decoderTaskN;
 
-	std::vector<cv::Point> points = {cv::Point(50, 50), cv::Point(1500, 50), cv::Point(1500, 1000) , cv::Point(50, 1000) };
-	std::vector<int> directs = {DIRECT_OUT, DIRECT_IN, DIRECT_IN , DIRECT_IN};
+	//std::vector<cv::Point> points = {cv::Point(50, 50), cv::Point(1500, 50), cv::Point(1500, 1000) , cv::Point(50, 1000) };
+	//std::vector<int> directs = {DIRECT_OUT, DIRECT_IN, DIRECT_IN , DIRECT_IN};
 
-	trackTaskN = std::make_shared<TrackTask>(&faceDetect, &headpose);
-	trackTaskN->setTrackPoints(points, directs);
+	trackTaskN = std::make_shared<TrackTask>(&faceDetect, &headpose, &det3net);
+	//trackTaskN->setTrackPoints(points, directs);
 	trackTaskN->set_start_cb(trackStartCB);
 	trackTaskN->set_end_cb(trackEndCB);
 
-	//trackTaskN->set_show(false);
-	//trackTaskN->set_screen(1280, 720);
+	trackTaskN->set_show(true);
+	trackTaskN->set_screen(1280, 720);
 
 	decoderTaskN = std::make_shared<DecodeTask>("a.mp4", trackTaskN.get(), decoder_device_id);
 	decoderTaskN->set_fps(fps);

@@ -4,6 +4,7 @@
 #include "dataqueue.h"
 #include "../detect/retina_face.h"
 #include "../detect/headpose.h"
+#include "../detect/det3.h"
 #include "../track/KalmanFilter/tracker.h"
 #include "../track/DeepAppearanceDescriptor/FeatureTensor.h"
 
@@ -50,14 +51,15 @@ private:
 	bool stop_ai_magic = false;
 	RetinaFace * faceDetect;
 	HEADPose * headPose;
+	Det3Net * det3net;
 	std::shared_ptr<std::thread> detectThread;
 	std::shared_ptr<std::thread> trackThread;
 	TrackStart track_start_cb = nullptr;
 	TrackEnd track_end_cb = nullptr;
 
 	float padding_float_w = 0.04f;
-	float padding_float_h = 0.1f;
-	float padding_upper = 2.5f;
+	float padding_float_h = 0.06f;
+	float padding_upper = 1.0f;
 	bool show = false;
 	int min_head = 8;
 	float dir_x = 0;
@@ -79,7 +81,7 @@ private:
 	
 
 public:
-	TrackTask(RetinaFace * detect, HEADPose * pose);
+	TrackTask(RetinaFace * detect, HEADPose * pose, Det3Net *det3);
 
 	void ai_magic_thread();
 	void ai_track_thread();
