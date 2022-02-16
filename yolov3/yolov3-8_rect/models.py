@@ -38,7 +38,7 @@ def create_modules(module_defs):
             kernel_size = int(module_def["size"])
             pad = (kernel_size - 1) // 2 if int(module_def["pad"]) else 0
             modules.add_module(
-                "conv_%d" % i,
+                "Conv2d",
                 nn.Conv2d(
                     in_channels=output_filters[-1],
                     out_channels=filters,
@@ -49,22 +49,22 @@ def create_modules(module_defs):
                 ),
             )
             if bn:
-                modules.add_module("batch_norm_%d" % i, nn.BatchNorm2d(filters))
+                modules.add_module("BatchNorm2d", nn.BatchNorm2d(filters))
             if module_def["activation"] == "leaky":
-                modules.add_module("leaky_%d" % i, nn.LeakyReLU(0.1))
+                modules.add_module("activation", nn.LeakyReLU(0.1))
 
         elif module_def["type"] == "maxpool":
             kernel_size = int(module_def["size"])
             stride = int(module_def["stride"])
             if kernel_size == 2 and stride == 1:
                 padding = nn.ZeroPad2d((0, 1, 0, 1))
-                modules.add_module("_debug_padding_%d" % i, padding)
+                modules.add_module("ZeroPad2d", padding)
             maxpool = nn.MaxPool2d(
                 kernel_size=int(module_def["size"]),
                 stride=int(module_def["stride"]),
                 padding=int((kernel_size - 1) // 2),
             )
-            modules.add_module("maxpool_%d" % i, maxpool)
+            modules.add_module("MaxPool2d", maxpool)
 
         elif module_def["type"] == "upsample":
             upsample = nn.Upsample(scale_factor=int(module_def["stride"]), mode="nearest")
@@ -88,7 +88,8 @@ def create_modules(module_defs):
             anchors = [anchors[i] for i in anchor_idxs]
             num_classes = int(module_def["classes"])
             img_height = int(hyperparams["height"])
-            nG = int(module_def["input_size"])
+            #nG = int(module_def["input_size"])
+            nG = (int(module_def["input_width"]), int(module_def["input_height"]))
             # Define detection layer
             yolo_layer = YOLOLayer(anchors, num_classes, img_height, nG)
             modules.add_module("yolo_%d" % save_val, yolo_layer)
@@ -126,9 +127,9 @@ class YOLOLayer(nn.Module):
         # add parameter
         nA = self.num_anchors
         self.nG = nG
-        self.stride = self.image_dim / nG
-        self.grid_x = Parameter(torch.arange(nG).repeat(nG, 1).view([1, 1, nG*nG, 1]).float())
-        self.grid_y = Parameter(torch.arange(nG).repeat(nG, 1).t().contiguous().view([1, 1, nG*nG, 1]).float())
+        self.stride = self.image_dim / nG[0]
+        self.grid_x = Parameter(torch.arange(nG[0]).repeat(nG[1], 1).view([1, 1, nG[0]*nG[1], 1]).float())
+        self.grid_y = Parameter(torch.arange(nG[0]).repeat(nG[1], 1).t().contiguous().view([1, 1, nG[0]*nG[1], 1]).float())
         self.scaled_anchors = Parameter(torch.FloatTensor([(a_w / self.stride, a_h / self.stride) for a_w, a_h in self.anchors]))
         self.anchor_w = Parameter(self.scaled_anchors[:, 0:1].view((1, nA, 1, 1)))
         self.anchor_h = Parameter(self.scaled_anchors[:, 1:2].view((1, nA, 1, 1)))
@@ -141,8 +142,9 @@ class YOLOLayer(nn.Module):
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
         LongTensor = torch.cuda.LongTensor if x.is_cuda else torch.LongTensor
         ByteTensor = torch.cuda.ByteTensor if x.is_cuda else torch.ByteTensor
-
-        prediction = x.view(nB, nA, self.bbox_attrs, self.nG* self.nG)
+        
+        
+        prediction = x.view(nB, nA, self.bbox_attrs, self.nG[0]* self.nG[1])
         prediction = prediction.permute(0, 1, 3, 2).contiguous()
 
         # Get outputs
@@ -152,7 +154,6 @@ class YOLOLayer(nn.Module):
         h = prediction[..., 3:4]  # Height
         pred_conf = torch.sigmoid(prediction[..., 4:5])  # Conf
         pred_cls = torch.sigmoid(prediction[..., 5:])  # Cls pred.
-
 
         # Calculate offsets for each grid
         # moved to init
@@ -260,7 +261,7 @@ class Darknet(nn.Module):
         self.nG = 0
         self.conf_thres = conf_thres
         self.nms_thres = nms_thres
-        self.maxBoxNum = 15360;
+        self.maxBoxNum = 1000;
         self.header_info = np.array([0, 0, 0, self.seen, 0])
         self.loss_names = ["x", "y", "w", "h", "conf", "cls", "recall", "precision"]
 
@@ -305,7 +306,7 @@ class Darknet(nn.Module):
                             anchors.append(element1)
                             anchors.append(element2)
                         self.num_classes = int(module_def["classes"])
-                        self.nG = int(module_def["input_size"])
+                        self.nG = (int(module_def["input_width"]), int(module_def["input_height"]))
                 output.append(x)
             layer_outputs.append(x)
 
@@ -314,9 +315,16 @@ class Darknet(nn.Module):
 
         if mlu:
             self.num_anchors = len(anchors)
-            detect_out = torch.ops.torch_mlu.yolov3_detection_output(output[0], output[1], output[2],
-                              tuple(anchors), self.num_classes, self.num_anchors,
-                              self.img_size, self.conf_thres, self.nms_thres, self.maxBoxNum)
+            #print(self.img_size, self.conf_thres, self.nms_thres, self.maxBoxNum, tuple(anchors), self.num_classes, self.num_anchors)
+            #print("output", output[0].shape, output[1].shape, output[2].shape)
+            #detect_out = torch.ops.torch_mlu.yolov3_detection_output(output[0], output[1], output[2],
+            #                  tuple(anchors), self.num_classes, self.num_anchors,
+            #                  self.img_size, self.conf_thres, self.nms_thres, self.maxBoxNum)
+            print("anchor:", anchors)
+           
+            detect_out = torch.ops.torch_mlu.yolov5_detection_output(output[0].sigmoid(), output[1].sigmoid(), output[2].sigmoid(),
+                             tuple(anchors), self.num_classes, self.num_anchors,
+                             288, 512, self.conf_thres, self.nms_thres, self.maxBoxNum)
             return detect_out
         else:
             return sum(output) if is_training else torch.cat(output, 1)

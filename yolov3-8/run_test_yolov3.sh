@@ -1,1 +1,0 @@
-python test.py --mlu true --jit true --save_pt false --offline_mode false --batch_size 1 --core_number 1 --ann_dir $COCO_PATH_PYTORCH/COCO --image_number 1000 --half_input 1 --quantized_mode 1 --coco_path  $COCO_PATH_PYTORCH/COCO --quantization false --input_channel_order 0
