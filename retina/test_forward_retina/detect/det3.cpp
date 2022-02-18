@@ -8,15 +8,16 @@ Det3Net::Det3Net(std::string models_path) {
 	cnrtInit(0);
 	unsigned devNum;
 	cnrtGetDeviceCount(&devNum);
-	/*if (FLAGS_mludevice >= 0) {
-		CHECK_NE(devNum, 0) << "No device found";
-		CHECK_LE(FLAGS_mludevice, devNum) << "valid device count: " << devNum;
-	} else {
-		LOG(FATAL) << "Invalid device number";
+	if (devNum == 0)
+	{
+        std::cout<<"No device found"<<std::endl;
 	}
 
-	cnrtGetDeviceHandle(&dev, FLAGS_mludevice);*/
-	
+	//获取指定设备的句柄
+	cnrtGetDeviceHandle(&dev, dev_id);
+	//设置当前使用的设备,作用于线程上下文
+	cnrtSetCurrentDevice(dev);
+
 	//cnrtSetCurrentDevice(dev);
 	
 	// 2. load model and get function
@@ -32,6 +33,10 @@ Det3Net::Det3Net(std::string models_path) {
 void Det3Net::init(){
 	cnrtCreateFunction(&function);
     cnrtExtractFunction(&function, model, "subnet0");
+	if(dev_channel>=0)
+	{
+		CNRT_CHECK(cnrtSetCurrentChannel((cnrtChannelType_t)dev_channel));
+	}
     cnrtCreateRuntimeContext(&rt_ctx_, function, NULL);
 	
     // 3. get function's I/O DataDesc
@@ -83,6 +88,10 @@ void Det3Net::init(){
     cnrtCreateQueue(&cnrt_queue);
     //cnrtSetRuntimeContextDeviceId(rt_ctx_, dev);  //Dev ordinal value error
 	cnrtInitRuntimeContext(rt_ctx_, NULL);
+	//设置invoke的参数
+	unsigned int affinity=1<<dev_channel;//设置通道亲和性,使用指定的MLU cluster做推理
+	invokeParam.invoke_param_type = CNRT_INVOKE_PARAM_TYPE_0;
+	invokeParam.cluster_affinity.affinity = &affinity;
 }
 
 
@@ -93,10 +102,11 @@ bool Det3Net::Detect(cv::Mat& img) {
 	for (int row = 0; row < input_size_h; ++row) {
 		uchar* uc_pixel = img.data + row * img.step;
 		for (int col = 0; col < input_size_w; ++col) {
-			data[3*i] = ((float)uc_pixel[0] - means[0])*stdvs[0];
-			data[3*i+1] = ((float)uc_pixel[1] - means[1])*stdvs[0];
-			data[3*i +2] = ((float)uc_pixel[2] - means[2])*stdvs[0];
+			data[0] = ((float)uc_pixel[0] - means[0])*stdvs[0];
+			data[1] = ((float)uc_pixel[1] - means[1])*stdvs[0];
+			data[2] = ((float)uc_pixel[2] - means[2])*stdvs[0];
 			uc_pixel += 3;
+			data += 3;
 			++i;
 		}
 	}
@@ -111,7 +121,7 @@ bool Det3Net::Detect(cv::Mat& img) {
     }
 	
 	//3. inference
-	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, nullptr));
+	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, &invokeParam));
     if (cnrtSyncQueue(cnrt_queue) == CNRT_RET_SUCCESS) {
 
 		// 4. get_data

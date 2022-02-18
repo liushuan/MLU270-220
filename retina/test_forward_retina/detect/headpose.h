@@ -4,7 +4,6 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#include <glog/logging.h>
 #include <cnrt.h>
 
 struct Pose {
@@ -34,8 +33,14 @@ private:
     std::vector<int> in_count;
     std::vector<int> out_count;
 	
+	
+	
 	void** inputMluPtrS = nullptr;
 	void** outputMluPtrS = nullptr;
+	
+	int dev_id = 0;
+	int dev_channel = -1;
+	cnrtInvokeParam_t 		invokeParam;				//invoke参数
 	
 	cnrtQueue_t cnrt_queue;
 	

@@ -7,17 +7,16 @@ RetinaFace::RetinaFace(std::string models_path) {
 	//FLAGS_alsologtostderr = 1;
 
 	cnrtInit(0);
-	//unsigned devNum;
-	//cnrtGetDeviceCount(&devNum);
-	/*if (FLAGS_mludevice >= 0) {
-		CHECK_NE(devNum, 0) << "No device found";
-		CHECK_LE(FLAGS_mludevice, devNum) << "valid device count: " << devNum;
-	} else {
-		std::cout << "Invalid device number"<<std::endl;
+	unsigned devNum;
+	cnrtGetDeviceCount(&devNum);
+	if (devNum == 0)
+	{
+        std::cout<<"No device found"<<std::endl;
 	}
-	cnrtGetDeviceHandle(&dev, FLAGS_mludevice);*/
-	
-	//cnrtSetCurrentDevice(dev);
+	//获取指定设备的句柄
+	cnrtGetDeviceHandle(&dev, dev_id);
+	//设置当前使用的设备,作用于线程上下文
+	cnrtSetCurrentDevice(dev);
 	// 2. load model and get function
 
 	//int size;
@@ -35,7 +34,12 @@ RetinaFace::RetinaFace(std::string models_path) {
 void RetinaFace::init(){
 	cnrtCreateFunction(&function);
     cnrtExtractFunction(&function, model, "subnet0");
-    cnrtCreateRuntimeContext(&rt_ctx_, function, NULL);
+    
+	if(dev_channel>=0)
+	{
+		CNRT_CHECK(cnrtSetCurrentChannel((cnrtChannelType_t)dev_channel));
+	}
+	cnrtCreateRuntimeContext(&rt_ctx_, function, NULL);
 	
     // 3. get function's I/O DataDesc
     cnrtGetInputDataSize(&inputSizeS, &inputNum, function);
@@ -86,6 +90,12 @@ void RetinaFace::init(){
     cnrtCreateQueue(&cnrt_queue);
     //cnrtSetRuntimeContextDeviceId(rt_ctx_, dev);  //Dev ordinal value error
 	cnrtInitRuntimeContext(rt_ctx_, NULL);
+	
+	//设置invoke的参数
+	unsigned int affinity=1<<dev_channel;//设置通道亲和性,使用指定的MLU cluster做推理
+	invokeParam.invoke_param_type = CNRT_INVOKE_PARAM_TYPE_0;
+	invokeParam.cluster_affinity.affinity = &affinity;
+	
 }
 
 
@@ -261,23 +271,41 @@ void RetinaFace::sure_face(std::vector<FaceA>&faces){
 	}
 }
 
+static void PrintTime(double start, std::string Tag)
+{
+	double end = cv::getTickCount();
+	std::cout<<Tag << (end-start)/cv::getTickFrequency()*1000<<" ms"<<std::endl;
+}
+
 void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
+	
+	cv::resize(img, img, cv::Size(512,288));
+	double start = cv::getTickCount();
+	
 	cv::Mat dst;
 	int pad_left = 0, resize_w = 0, pad_top = 0, resize_h = 0;
 	dst = resize_with_crop(img, input_size_w, input_size_h, pad_top, pad_left, resize_w, resize_h);
+	
+	PrintTime(start, "resize_with_crop:");
+	start = cv::getTickCount();
 	//1. process
 	float * data = reinterpret_cast<float*>(inputCpuPtrS[0]);
+	
 	int i = 0;
 	for (int row = 0; row < input_size_h; ++row) {
 		uchar* uc_pixel = dst.data + row * dst.step;
 		for (int col = 0; col < input_size_w; ++col) {
-			data[3*i] = (float)uc_pixel[0] - means[0];
-			data[3*i+1] = (float)uc_pixel[1] - means[1];
-			data[3*i +2] = (float)uc_pixel[2] - means[2];
+			data[0] = (float)uc_pixel[0] - means[0];
+			data[1] = (float)uc_pixel[1] - means[1];
+			data[2] = (float)uc_pixel[2] - means[2];
 			uc_pixel += 3;
+			data += 3;
 			++i;
 		}
 	}
+	PrintTime(start, "process:");
+	start = cv::getTickCount();
+	
 	//2. copy data to mlu.
 	for (int i = 0; i < inputNum; i++) {
 	  //拷贝数据MLU
@@ -287,28 +315,35 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
                  CNRT_MEM_TRANS_DIR_HOST2DEV);
 
     }
+	PrintTime(start, "CNRT_MEM_TRANS_DIR_HOST2DEV:");
+	start = cv::getTickCount();
 	
 	//3. inference
-	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, nullptr));
+	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, &invokeParam));
     if (cnrtSyncQueue(cnrt_queue) == CNRT_RET_SUCCESS) {
-
-			// 4. get_data
+		
+		PrintTime(start, "cnrtInvokeRuntimeContext:");
+		start = cv::getTickCount();
+		// 4. get_data
 		for (int i = 0; i < outputNum; i++) {
 		  int output_count = outputSizeS[i] / cnrtDataTypeSize(output_data_type[i]);
-		  cnrtMemcpy(outputCpuPtrS[i],
+		  cnrtMemcpy(outTransCpuPtrS[i],
 					 outputMluPtrS[i],
 					 outputSizeS[i],
 					 CNRT_MEM_TRANS_DIR_DEV2HOST);
-		  
-		  std::vector<int> shape(4, 1);
+		  /*std::vector<int> shape(4, 1);
 		  int dimNum = 4;
 		  cnrtGetOutputDataShape((int**)&shape, &dimNum, i, function);
 		  int dim_order[4] = {0, 3, 1, 2};
 		  int dim_shape[4] = {shape[0], shape[1],
 							  shape[2], shape[3]};  // NHWC
 		  cnrtTransDataOrder(outputCpuPtrS[i], CNRT_FLOAT32, outTransCpuPtrS[i],
-							 4, dim_shape, dim_order);
+							 4, dim_shape, dim_order);*/
 		}
+		
+		PrintTime(start, "CNRT_MEM_TRANS_DIR_DEV2HOST:");
+		start = cv::getTickCount();
+		
 		float * result_loc = (reinterpret_cast<float*>(outTransCpuPtrS[0]));
 		float * result_conf = (reinterpret_cast<float*>(outTransCpuPtrS[1]));
 		float * result_landmks = (reinterpret_cast<float*>(outTransCpuPtrS[2]));
@@ -325,14 +360,23 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 		
 		std::vector<FaceA>pre_plates;
 		int length = out_count[1] / 2;
+		int length_array[10] = {0, length, 2*length, 3*length,4*length, 5*length, 6*length, 7*length, 8*length, 9*length}; 
+		//std::cout<<"out_count:"<<out_count[1]<<std::endl;
+		
+		float temp_loc_data[4];
+		float temp_landmark_data[10];
 		for (int i = 0; i < length; i++)
 		{
-			float score = result_conf[2*i + 1];
+			float score = result_conf[length + i];
 			if (score > threhold)
 			{
 				FaceA ps;
 				ps.score = score;
-				bbox_pred(myAnchors[i].anchor, &result_loc[4*i], ps.rect);
+				
+				for (int j = 0; j < 4; j++){
+					temp_loc_data[j] = result_loc[length_array[j]+i];
+				}
+				bbox_pred(myAnchors[i].anchor, temp_loc_data, ps.rect);
 				ps.rect.x = std::max((ps.rect.x*input_size_w - pad_left)*w_scale, 0.0f);
 				ps.rect.y = std::max((ps.rect.y*input_size_h - pad_top)*h_scale, 0.0f);
 				ps.rect.width = std::min(ps.rect.width*input_size_w * w_scale, img.cols - ps.rect.x);
@@ -340,7 +384,11 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 				if (ps.rect.width < 10 || ps.rect.height < 10) {
 					continue;
 				}
-				landmk_pred(myAnchors[i].anchor, &result_landmks[10*i], ps.landmarks);
+				
+				for (int j = 0; j < 10; j++){
+					temp_landmark_data[j] = result_landmks[length_array[j]+i];
+				}
+				landmk_pred(myAnchors[i].anchor, temp_landmark_data, ps.landmarks);
 				for (size_t n = 0; n < 5; n++)
 				{
 					ps.landmarks[2 * n] = (ps.landmarks[2 * n] * input_size_w - pad_left) * w_scale;
@@ -351,6 +399,7 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 		}
 		nms_cpu(pre_plates, iou_threhold, face);
 		sure_face(face);
+		PrintTime(start, "sure_face:");
     } else {
       std::cout<< " SyncQueue Error "<<std::endl;
     }

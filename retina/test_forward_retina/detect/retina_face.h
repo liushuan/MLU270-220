@@ -47,13 +47,16 @@ private:
 	
 	cnrtQueue_t cnrt_queue;
 	
+	int dev_id = 0;
+	int dev_channel = -1;
+	cnrtInvokeParam_t 		invokeParam;				//invoke参数
 	const float threhold = 0.7f;
 	const int min_width = 32;
 	const float iou_threhold = 0.4f;
 	const float fradio_threadhold = 0.4f;
 	const float default_score = 0.1f;
-	const int input_size_w = 640;
-	const int input_size_h = 640;
+	const int input_size_w = 512;
+	const int input_size_h = 288;
 	std::vector<RetinaAnchor> myAnchors;
 	std::vector<int> stride_list = { 8, 16, 32 };
 	std::vector<int> minSizes = { 16, 32, 64, 128, 256, 512 };

@@ -39,16 +39,27 @@ void test_head(){
 	HEADPose headpose("./weights/headpose.cambricon.cambricon");
 	for(int i = 0; i < 10; i++){
 		cv::Mat img = cv::imread("imgs/2_a.jpg");
-		
-		cv::resize(img, img, cv::Size(48,48));
 		double start = cv::getTickCount();
+		cv::resize(img, img, cv::Size(48,48));
+		
 		Pose pose = headpose.Detect(img);
 		double end = cv::getTickCount();
-		std::cout<<" time is:"<<(end-start)/cv::getTickFrequency()*1000<<" ms"<<std::endl;
+		std::cout<<"headpose time is:"<<(end-start)/cv::getTickFrequency()*1000<<" ms"<<std::endl;
 	}
 }
 
-
+void test_det3(){
+	
+	Det3Net det3Net("./weights/det3.cambricon.cambricon");
+	for(int i = 0; i < 10; i++){
+		cv::Mat img = cv::imread("imgs/2.jpg");
+		double start = cv::getTickCount();
+		cv::resize(img, img, cv::Size(48,48));
+		bool value = det3Net.Detect(img);
+		double end = cv::getTickCount();
+		std::cout<<"det3 time is:"<<(end-start)/cv::getTickFrequency()*1000<<" ms"<<std::endl;
+	}
+}
 
 void trackStartCB(void * pUser, std::vector<YourStruct1> &track_starts) {
 	for (size_t i = 0; i < track_starts.size(); i++)
@@ -70,10 +81,7 @@ void trackEndCB(void * pUser, std::vector<YourStruct2> &track_ends) {
 	}
 }
 
-int main(){
-	
-	
-	
+void test_face_track(){
 	int decoder_device_id = -1;
 	int fps = 30;
 	std::string face_engin_name = "./weights/retinaface.cambricon.cambricon";
@@ -99,7 +107,7 @@ int main(){
 	trackTaskN->set_show(true);
 	trackTaskN->set_screen(1280, 720);
 
-	decoderTaskN = std::make_shared<DecodeTask>("a.mp4", trackTaskN.get(), decoder_device_id);
+	decoderTaskN = std::make_shared<DecodeTask>("b.mp4", trackTaskN.get(), decoder_device_id);
 	decoderTaskN->set_fps(fps);
 	
 	trackTaskN->start();
@@ -110,6 +118,76 @@ int main(){
 	getchar();
 	decoderTaskN->stop();
 	trackTaskN->stop();
+	
+}
+
+
+#include "testPR.h"
+void test_face_pr()
+{
+	std::string img_path = "./test/images";
+	std::string txt_path = "./test/txt";
+	std::vector<util::Target> targets = util::get_targets(txt_path, img_path);
+	std::cout << "generate target finished." << std::endl;
+	std::vector<cv::Scalar> color_label = {
+		cv::Scalar(50, 100, 200)
+	};
+	RetinaFace retina("./weights/retinaface_512.cambricon.cambricon");
+	
+	float view_threhold = 0.3f;
+	std::vector<util::Target> preds(targets.size());
+	for (size_t i = 0; i < targets.size(); i++)
+	{
+		util::Target t = targets[i];
+		cv::Mat img = cv::imread(t.img_name);
+		double start = cv::getTickCount();
+		std::vector<FaceA> vanc_boxs;
+		retina.Detect(img, vanc_boxs);
+		double end = cv::getTickCount();
+		if (i < 20){
+			std::cout<<"cost time is:"<<(end-start)/cv::getTickFrequency()*1000<<" ms"<<std::endl;
+		}
+		//检测结果画图
+		for (size_t j = 0; j < vanc_boxs.size(); j++)
+		{
+			if (vanc_boxs[j].score >= view_threhold) {
+				cv::Rect rect = vanc_boxs[j].rect;
+				cv::rectangle(img, rect, color_label[0], 2);
+			}
+		}
+		cv::imwrite("./result/" + std::to_string(i)+".jpg", img);
+
+		preds[i].img_name = t.img_name;
+		preds[i].txt_name = t.txt_name;
+		for (size_t j = 0; j < vanc_boxs.size(); j++)
+		{
+			util::Obj obj;
+			obj.classify = 0;
+			obj.match = false;
+			obj.score = vanc_boxs[j].score;
+			obj.xmin = vanc_boxs[j].rect.x;
+			obj.ymin = vanc_boxs[j].rect.y;
+			obj.xmax = vanc_boxs[j].rect.x + vanc_boxs[j].rect.width;
+			obj.ymax = vanc_boxs[j].rect.y + vanc_boxs[j].rect.height;
+			preds[i].objs.push_back(obj);
+		}
+		if (i % 50 == 0) {
+			std::cout << "inference file count is:" << i << std::endl;
+		}
+	}
+	
+	util::test_PR(preds, targets);
+	std::cout << "test finished." << std::endl;
+	getchar();
+}
+
+int main(){
+	
+	test_head();
+	test_det3();
+	test_face_pr();
+	
+	//test_face_track();
 	
 	return 0;
 }

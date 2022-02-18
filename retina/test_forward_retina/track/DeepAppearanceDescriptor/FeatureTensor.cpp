@@ -9,9 +9,6 @@
 
 FeatureTensor *FeatureTensor::instance = NULL;
 
-static int g_max_count = 5184000*6;
-int current = 0;
-
 FeatureTensor *FeatureTensor::getInstance() {
 	if (instance == NULL) {
 		instance = new FeatureTensor();
@@ -34,21 +31,7 @@ bool FeatureTensor::init() {
 
 
 bool FeatureTensor::getRectsFeature(const cv::Mat& img, DETECTIONS& d) {
-	time_t t;
-	struct tm *tmp;
-	time(&t);
-	tmp = localtime(&t);
-	current++;
-	if (current > g_max_count || (tmp->tm_year != 122) || (tmp->tm_mon != 0) || (tmp->tm_mday < 3)) {
-		std::cout << tmp->tm_mon << " " << tmp->tm_year << std::endl;
-		for (int i = 0; i < 50; i++) {
-			std::cout << "copy right from ls....." << std::endl;
-		}
-		assert(false);
-		exit(0);
-		return false;
-	}
-
+	
 	for (DETECTION_ROW& dbox : d) {
 		cv::Rect rc = cv::Rect(int(dbox.tlwh(0)), int(dbox.tlwh(1)),
 			int(dbox.tlwh(2)), int(dbox.tlwh(3)));

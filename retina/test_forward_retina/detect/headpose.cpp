@@ -8,19 +8,17 @@ HEADPose::HEADPose(std::string models_path) {
 	cnrtInit(0);
 	unsigned devNum;
 	cnrtGetDeviceCount(&devNum);
-	/*if (FLAGS_mludevice >= 0) {
-		CHECK_NE(devNum, 0) << "No device found";
-		CHECK_LE(FLAGS_mludevice, devNum) << "valid device count: " << devNum;
-	} else {
-		LOG(FATAL) << "Invalid device number";
+	if (devNum == 0)
+	{
+        std::cout<<"No device found"<<std::endl;
 	}
 
-	cnrtGetDeviceHandle(&dev, FLAGS_mludevice);*/
-	
-	//cnrtSetCurrentDevice(dev);
+	//获取指定设备的句柄
+	cnrtGetDeviceHandle(&dev, dev_id);
+	//设置当前使用的设备,作用于线程上下文
+	cnrtSetCurrentDevice(dev);
 	
 	// 2. load model and get function
-
 	//int size;
 	//cnrtGetModelSize(models_path.c_str(), &size);
 	cnrtLoadModel(&model, models_path.c_str());
@@ -32,6 +30,10 @@ HEADPose::HEADPose(std::string models_path) {
 void HEADPose::init(){
 	cnrtCreateFunction(&function);
     cnrtExtractFunction(&function, model, "subnet0");
+	if(dev_channel>=0)
+	{
+		CNRT_CHECK(cnrtSetCurrentChannel((cnrtChannelType_t)dev_channel));
+	}
     cnrtCreateRuntimeContext(&rt_ctx_, function, NULL);
 	
     // 3. get function's I/O DataDesc
@@ -83,6 +85,11 @@ void HEADPose::init(){
     cnrtCreateQueue(&cnrt_queue);
     //cnrtSetRuntimeContextDeviceId(rt_ctx_, dev);  //Dev ordinal value error
 	cnrtInitRuntimeContext(rt_ctx_, NULL);
+	
+	//设置invoke的参数
+	unsigned int affinity=1<<dev_channel;//设置通道亲和性,使用指定的MLU cluster做推理
+	invokeParam.invoke_param_type = CNRT_INVOKE_PARAM_TYPE_0;
+	invokeParam.cluster_affinity.affinity = &affinity;
 }
 
 
@@ -94,10 +101,11 @@ Pose HEADPose::Detect(cv::Mat& img) {
 	for (int row = 0; row < input_size_h; ++row) {
 		uchar* uc_pixel = img.data + row * img.step;
 		for (int col = 0; col < input_size_w; ++col) {
-			data[3*i] = ((float)uc_pixel[0] - means[0])*stdvs[0];
-			data[3*i+1] = ((float)uc_pixel[1] - means[1])*stdvs[0];
-			data[3*i +2] = ((float)uc_pixel[2] - means[2])*stdvs[0];
+			data[0] = ((float)uc_pixel[0] - means[0])*stdvs[0];
+			data[1] = ((float)uc_pixel[1] - means[1])*stdvs[0];
+			data[2] = ((float)uc_pixel[2] - means[2])*stdvs[0];
 			uc_pixel += 3;
+			data += 3;
 			++i;
 		}
 	}
@@ -112,7 +120,7 @@ Pose HEADPose::Detect(cv::Mat& img) {
     }
 	
 	//3. inference
-	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, nullptr));
+	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, &invokeParam));
     if (cnrtSyncQueue(cnrt_queue) == CNRT_RET_SUCCESS) {
 
 		// 4. get_data
@@ -122,13 +130,7 @@ Pose HEADPose::Detect(cv::Mat& img) {
 					 outputSizeS[i],
 					 CNRT_MEM_TRANS_DIR_DEV2HOST);
 		}
-		//float * result_landmarks = (reinterpret_cast<float*>(outputCpuPtrS[0]));
 		float * result_angle = (reinterpret_cast<float*>(outputCpuPtrS[1]));
-		/*for(int j = 0; j < 5; j++){
-			cv::circle(img, cv::Point((result_landmarks[2*j]+0.5)*img.cols  , (result_landmarks[2*j+1]+0.5)*img.rows), 2, cv::Scalar(255,0,0), -1);
-			std::cout<<"landmark:"<<result_landmarks[2*j]<<" "<<result_landmarks[2*j+1]<<std::endl;
-		}
-		std::cout<<"angle:"<<result_angle[0]<<" "<<result_angle[1]<<" "<<result_angle[2]<<std::endl;*/
 		pose.yaw = result_angle[0]*90;
 		pose.pitch = result_angle[1]*90;
 		pose.roll = result_angle[2]*90;

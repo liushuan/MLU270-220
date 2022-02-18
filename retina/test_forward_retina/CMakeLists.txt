@@ -13,9 +13,9 @@ include_directories("/usr/local/neuware/include")
 link_directories("/usr/local/neuware/lib64")
 set(CNRT_LIBS cnrt)
 
-include_directories("/usr/include")
-link_directories("/usr/lib/x86_64-linux-gnu")
-set(LINKER_LIBS glog gflags)
+#include_directories("/usr/include")
+#link_directories("/usr/lib/x86_64-linux-gnu")
+#set(LINKER_LIBS glog gflags)
 
 include_directories("/usr/include/eigen3")
 add_definitions(-DUSE_NEON)

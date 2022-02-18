@@ -4,7 +4,6 @@
 #include <opencv2/opencv.hpp>
 #include <vector>
 
-#include <glog/logging.h>
 #include <cnrt.h>
 
 class Det3Net {
@@ -31,6 +30,10 @@ private:
 	void** outputMluPtrS = nullptr;
 	
 	cnrtQueue_t cnrt_queue;
+	
+	int dev_id = 0;
+	int dev_channel = -1;
+	cnrtInvokeParam_t 		invokeParam;				//invoke参数
 	
 	const int input_size_w = 48;
 	const int input_size_h = 48;
