@@ -279,15 +279,14 @@ static void PrintTime(double start, std::string Tag)
 
 void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 	
-	cv::resize(img, img, cv::Size(512,288));
-	double start = cv::getTickCount();
+	//double start = cv::getTickCount();
 	
 	cv::Mat dst;
 	int pad_left = 0, resize_w = 0, pad_top = 0, resize_h = 0;
 	dst = resize_with_crop(img, input_size_w, input_size_h, pad_top, pad_left, resize_w, resize_h);
 	
-	PrintTime(start, "resize_with_crop:");
-	start = cv::getTickCount();
+	//PrintTime(start, "resize_with_crop:");
+	//start = cv::getTickCount();
 	//1. process
 	float * data = reinterpret_cast<float*>(inputCpuPtrS[0]);
 	
@@ -303,8 +302,8 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 			++i;
 		}
 	}
-	PrintTime(start, "process:");
-	start = cv::getTickCount();
+	//PrintTime(start, "process:");
+	//start = cv::getTickCount();
 	
 	//2. copy data to mlu.
 	for (int i = 0; i < inputNum; i++) {
@@ -315,15 +314,15 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
                  CNRT_MEM_TRANS_DIR_HOST2DEV);
 
     }
-	PrintTime(start, "CNRT_MEM_TRANS_DIR_HOST2DEV:");
-	start = cv::getTickCount();
+	//PrintTime(start, "CNRT_MEM_TRANS_DIR_HOST2DEV:");
+	//start = cv::getTickCount();
 	
 	//3. inference
 	CNRT_CHECK(cnrtInvokeRuntimeContext(rt_ctx_, param, cnrt_queue, &invokeParam));
     if (cnrtSyncQueue(cnrt_queue) == CNRT_RET_SUCCESS) {
 		
-		PrintTime(start, "cnrtInvokeRuntimeContext:");
-		start = cv::getTickCount();
+		//PrintTime(start, "cnrtInvokeRuntimeContext:");
+		//start = cv::getTickCount();
 		// 4. get_data
 		for (int i = 0; i < outputNum; i++) {
 		  int output_count = outputSizeS[i] / cnrtDataTypeSize(output_data_type[i]);
@@ -341,8 +340,8 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 							 4, dim_shape, dim_order);*/
 		}
 		
-		PrintTime(start, "CNRT_MEM_TRANS_DIR_DEV2HOST:");
-		start = cv::getTickCount();
+		//PrintTime(start, "CNRT_MEM_TRANS_DIR_DEV2HOST:");
+		//start = cv::getTickCount();
 		
 		float * result_loc = (reinterpret_cast<float*>(outTransCpuPtrS[0]));
 		float * result_conf = (reinterpret_cast<float*>(outTransCpuPtrS[1]));
@@ -399,7 +398,7 @@ void RetinaFace::Detect(cv::Mat& img, std::vector<FaceA>&face) {
 		}
 		nms_cpu(pre_plates, iou_threhold, face);
 		sure_face(face);
-		PrintTime(start, "sure_face:");
+		//PrintTime(start, "sure_face:");
     } else {
       std::cout<< " SyncQueue Error "<<std::endl;
     }
