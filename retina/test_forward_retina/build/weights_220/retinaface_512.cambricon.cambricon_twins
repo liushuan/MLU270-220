@@ -1,0 +1,49 @@
+This is the Twins File of "./weights/retinaface_512.cambricon.cambricon".
+Function number: 1
+---------------kernel graph--------------------
+
+Function #0 {
+Kernel num:1 
+Cache mode:0 
+Name: subnet0
+Input number: 1
+    Input #0.
+        Mask: 338036233
+        Shape(dim): 1 288 512 3 
+        Name: 
+        Id: 942
+        Data type: CNRT_FLOAT32        Dim Order: CNRT_NHWC
+        Quantize position: 0
+        Quantize scale: 0.000000
+Output number: 3
+    Output #0.
+        Mask: 338036233
+        Shape(dim): 1 4 1 6048 
+        Name: 
+        Id: 1464
+        Data type: CNRT_FLOAT32        Dim Order: CNRT_NHWC
+        Quantize position: 0
+        Quantize scale: 0.000000
+    Output #1.
+        Mask: 338036233
+        Shape(dim): 1 2 1 6048 
+        Name: 
+        Id: 1509
+        Data type: CNRT_FLOAT32        Dim Order: CNRT_NHWC
+        Quantize position: 1041731408
+        Quantize scale: 0.194108
+    Output #2.
+        Mask: 338036233
+        Shape(dim): 1 10 1 6048 
+        Name: 
+        Id: 1508
+        Data type: CNRT_FLOAT32        Dim Order: CNRT_NHWC
+        Quantize position: -1100705763
+        Quantize scale: -0.307488
+Kernel header #0:
+    Name: subnet0239
+    Core version: 
+    Model Parallelism: 4
+    Core limit: 4
+    Inst data split: true
+}
